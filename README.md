@@ -144,8 +144,85 @@ ts=2021-07-25T04:17:17.29061918Z caller=loop.go:134 component=sync-loop event=re
 ```
 
 * connecto to demo page using port-forward
+
 ```
 k port-forward svc/docker-nodejs-demo 8080:80 -n demo
+```
+
+- browsing http://localhost:8080. you can see heloo world(v1.0.2)!
+```
+Hello World (v1.0.2)!
+```
+
+## Check CD
+To check CD working well, you can modify deployment file. after that flux will get triggerd and continuous deploy to k8s.
+
+- update AKS to apply ACR attach
+```
+az aks update -n az-k8s-vps-prd -g RG-SKT-VPS --attach-acr vpsregistry
+```
+
+- update docker hub image to update ACR using tag command
+```
+docker image tag wardviaene/docker-nodejs-demo:1.0.2 vpsregistry.azurecr.io/docker-nodejs-demo:1.0.0 
+```
+
+- update docker image section in deployment file (hello.yaml) to look ACR
+```
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docker-nodejs-demo
+  namespace: demo
+  labels:
+    app: docker-nodejs-demo
+  annotations:
+    fluxcd.io/automated: "true"
+    fluxcd.io/tag.docker-nodejs-demo: semver:~1.0.0
+spec:
+  strategy:
+    rollingUpdate:
+      maxUnavailable: 0
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: docker-nodejs-demo
+  template:
+    metadata:
+      labels:
+        app: docker-nodejs-demo
+    spec:
+      containers:
+      - name: docker-nodejs-demo
+        image: vpsregistry.azurecr.io/docker-nodejs-demo:1.0.0
+        ports:
+        - name: nodejs-port
+          containerPort: 3000
+```
+
+- git commit
+```
+git add .
+git commit -m "modify docker registry to ACR"
+git push -u origin master
+```
+
+- flush will observe git repo and get will be triggerd. you can get log using like this.
+```
+k logs flux-85ffdc8d59-6bggb -n flux -f --tail 100  
+```
+
+- New Pod deployed
+You can check the Pod information to see if new docker image in ACR is reflected well.
+```
+> k describe po docker-nodejs-demo-d84757fbc-th4gc -n demo | grep -i 
+
+image                                                                                                                                  [14:48:57]
+    Image:          vpsregistry.azurecr.io/docker-nodejs-demo:1.0.0
+    Image ID:       docker.io/wardviaene/docker-nodejs-demo@sha256:70bedec7930bc6e124865838a2bb8596a29f799a6ad92b27fe50528313186ab1
+  Normal  Pulling    46m   kubelet            Pulling image "vpsregistry.azurecr.io/docker-nodejs-demo:1.0.0"
+  Normal  Pulled     46m   kubelet            Successfully pulled image "vpsregistry.azurecr.io/docker-nodejs-demo:1.0.0" in 555.135106ms
 ```
 
 
